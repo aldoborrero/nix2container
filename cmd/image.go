@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/nlewo/nix2container/nix"
@@ -131,7 +132,12 @@ func image(outputFilename, imageConfigPath string, fromImageFilename string, lay
 		}
 		image.Layers = append(image.Layers, fromImage.Layers...)
 
-		logrus.Infof("Using base image %s containing %d layers", fromImageFilename, len(fromImage.Layers))
+		merged := mergeBaseEnv(fromImage.ImageConfig.Env, imageConfig.Env)
+		nMerged := len(merged) - len(imageConfig.Env)
+		imageConfig.Env = merged
+
+		logrus.Infof("Using base image %s containing %d layers (merged %d base Env entries)",
+			fromImageFilename, len(fromImage.Layers), nMerged)
 	}
 
 	image.Arch = arch
@@ -185,4 +191,27 @@ func init() {
 	imageCmd.Flags().Var(&created, "created", "Timestamp at which the image was created")
 	rootCmd.AddCommand(imageFromDirCmd)
 	rootCmd.AddCommand(imageFromManifestCmd)
+}
+
+// mergeBaseEnv merges a base image's config.Env under the new image's,
+// matching nixpkgs dockerTools' overlay_base_config: base entries whose
+// key (the part before '=') isn't set by the new config carry through;
+// the new config's entries win on conflict and come last (so for
+// duplicate keys the runtime sees the new value). Without this, base
+// images lose their PATH / LD_LIBRARY_PATH-style environment as soon as
+// the derived image sets any Env at all.
+func mergeBaseEnv(baseEnv, newEnv []string) []string {
+	newKeys := map[string]bool{}
+	for _, kv := range newEnv {
+		if k, _, ok := strings.Cut(kv, "="); ok {
+			newKeys[k] = true
+		}
+	}
+	var merged []string
+	for _, kv := range baseEnv {
+		if k, _, ok := strings.Cut(kv, "="); ok && !newKeys[k] {
+			merged = append(merged, kv)
+		}
+	}
+	return append(merged, newEnv...)
 }
