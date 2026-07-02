@@ -9,7 +9,11 @@ let
     version = "1.0.0";
     src = l.fileset.toSource {
       root = ./.;
-      fileset = l.fileset.intersection (l.fileset.gitTracked ./.) (l.fileset.unions [
+      # gitTracked throws when the source tree has no .git — e.g. when this
+      # repo is imported via fetchTarball / builtins.fetchTarball instead of
+      # a flake or git checkout. Fall back to the whole tree; the explicit
+      # unions below still do the real filtering.
+      fileset = l.fileset.intersection (if builtins.pathExists ./.git then l.fileset.gitTracked ./. else ./.) (l.fileset.unions [
         (l.fileset.fileFilter ({ name, hasExt, ... }: name == "go.mod" || name == "go.sum" || hasExt "go") ./.)
         ./data
       ]);
