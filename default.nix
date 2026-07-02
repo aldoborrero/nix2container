@@ -237,6 +237,17 @@ let
     contents ? null,
     # Author, comment, created_by
     metadata ? { created_by = "nix2container"; },
+    # Compress layer blobs at build time ("gzip" | "zstd" | null). When
+    # set, each layer is tar+compressed and written to the derivation
+    # output alongside layers.json, and the `nix:` transport serves the
+    # blob file instead of re-tarring from /nix/store at push time. The
+    # compressed digest is cached, so a repush HEAD-checks the registry
+    # with no local work. Trade-off: this derivation's output grows from
+    # a few KB to the image's full compressed size, and any closure
+    # change re-compresses every layer (the layer grouping happens in
+    # the same derivation). null (the default) keeps the uncompressed
+    # streaming behavior.
+    compressor ? null,
   }: let
     subcommand = if reproducible
       then "layers-from-reproducible-storepaths"
@@ -264,6 +275,8 @@ let
     allDeps = deps ++ copyToRootList;
     tarDirectory = l.optionalString (!reproducible) "--tar-directory $out";
 
+    compressorFlag = l.optionalString (compressor != null) "--compressor ${compressor}";
+
     layersJSON = pkgs.runCommandLocal "layers.json" {} ''
       mkdir $out
       set -x
@@ -274,6 +287,7 @@ let
         ${rewritesFlag} \
         ${permsFlag} \
         ${historyFlag} \
+        ${compressorFlag} \
         ${tarDirectory} \
         ${toString (map (l: l + "/layers.json") layers)}
       set +x
@@ -375,6 +389,10 @@ let
     # Deprecated: will be removed
     contents ? null,
     meta ? {},
+    # See buildLayer.compressor above. Applied to the customization
+    # layer (which holds copyToRoot + its full closure, minus paths
+    # already in an explicit `layers` entry).
+    compressor ? null,
   }:
     let
       configFile = pkgs.writeText "config.json" (l.toJSON config);
@@ -398,7 +416,7 @@ let
         };
 
       customizationLayer = buildLayer {
-        inherit maxLayers;
+        inherit maxLayers compressor;
         perms = perms';
         copyToRoot = copyToRootList ++ l.optional initializeNixDatabase nixDatabase;
         deps = [configFile];

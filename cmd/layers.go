@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/nlewo/nix2container/closure"
 	"github.com/nlewo/nix2container/nix"
@@ -27,6 +28,7 @@ var permsFilepath string
 var rewritesFilepath string
 var historyFilepath string
 var maxLayers int
+var compressor string
 
 // layerCmd represents the layer command
 var layersReproducibleCmd = &cobra.Command{
@@ -74,7 +76,8 @@ var layersReproducibleCmd = &cobra.Command{
 			}
 		}
 
-		layers, err := nix.NewLayers(storepaths, maxLayers, parents, rewrites, ignore, perms, history)
+		blobDir := filepath.Dir(args[0]) + "/blobs"
+		layers, err := nix.NewLayers(storepaths, maxLayers, compressor, blobDir, parents, rewrites, ignore, perms, history)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s", err)
 			os.Exit(1)
@@ -187,5 +190,6 @@ func init() {
 	layersReproducibleCmd.Flags().StringVarP(&permsFilepath, "perms", "", "", "A JSON file containing file permissions")
 	layersReproducibleCmd.Flags().StringVarP(&historyFilepath, "history", "", "", "A JSON file containing layer history")
 	layersReproducibleCmd.Flags().IntVarP(&maxLayers, "max-layers", "", 1, "The maximum number of layers")
+	layersReproducibleCmd.Flags().StringVarP(&compressor, "compressor", "", "", "Compress layer blobs at build time (gzip|zstd). When set, compressed blobs are written to a blobs/ directory alongside the layers.json and served at push time instead of re-tarring from /nix/store.")
 
 }

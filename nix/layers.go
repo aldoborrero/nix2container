@@ -105,8 +105,35 @@ func newLayers(paths types.Paths, tarDirectory string, maxLayers int, history v1
 	return layers, nil
 }
 
-func NewLayers(storePaths []string, maxLayers int, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) ([]types.Layer, error) {
+// splitLayers slices paths into the layer groups implied by maxLayers,
+// mirroring newLayers' grouping: each of the first maxLayers-1 paths gets
+// its own layer and the remainder share the last one.
+func splitLayers(paths types.Paths, maxLayers int) []types.Paths {
+	var groups []types.Paths
+	offset := 0
+	for offset < len(paths) {
+		max := offset + 1
+		if offset == maxLayers-1 {
+			max = len(paths)
+		}
+		groups = append(groups, paths[offset:max])
+		offset = max
+	}
+	return groups
+}
+
+// NewLayers builds up to maxLayers layers from storePaths. When compressor
+// is non-empty ("gzip" | "zstd"), each layer is tar+compressed to blobDir
+// at build time and the returned Layer carries {Digest: compressed,
+// DiffIDs: uncompressed, LayerPath: blob file, MediaType:
+// tar+<compressor>}. When compressor is "", the existing streaming
+// behavior (tar at push time, Digest==DiffIDs, no blob file) applies and
+// blobDir is unused.
+func NewLayers(storePaths []string, maxLayers int, compressor, blobDir string, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) ([]types.Layer, error) {
 	paths := getPaths(storePaths, parents, rewrites, exclude, perms)
+	if compressor != "" {
+		return newLayersCompressed(splitLayers(paths, maxLayers), compressor, blobDir, history)
+	}
 	return newLayers(paths, "", maxLayers, history)
 }
 
