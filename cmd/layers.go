@@ -1,7 +1,7 @@
-// The generated structure is a list of layers. Currently, the list
-// always contains a single Layer, but in the future, we would like to
-// generate several layers with some algorithms, such as
-// https://grahamc.com/blog/nix-and-layered-docker-images
+// The generated structure is a list of layers. The closure is grouped
+// into up to --max-layers layers by closure.LayeredPaths (a size-cohort
+// algorithm in the spirit of
+// https://grahamc.com/blog/nix-and-layered-docker-images).
 
 package cmd
 
@@ -39,11 +39,7 @@ var layersReproducibleCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "%s", err)
 			os.Exit(1)
 		}
-		storepaths, err := closure.SortedPathsByPopularity(closureGraph)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s", err)
-			os.Exit(1)
-		}
+		groups := closure.LayeredPaths(closureGraph, maxLayers)
 		parents, err := getLayersFromFiles(args[2:])
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s", err)
@@ -74,7 +70,7 @@ var layersReproducibleCmd = &cobra.Command{
 			}
 		}
 
-		layers, err := nix.NewLayers(storepaths, maxLayers, parents, rewrites, ignore, perms, history)
+		layers, err := nix.NewLayers(groups, parents, rewrites, ignore, perms, history)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s", err)
 			os.Exit(1)
@@ -98,11 +94,7 @@ var layersNonReproducibleCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "%s", err)
 			os.Exit(1)
 		}
-		storepaths, err := closure.SortedPathsByPopularity(closureGraph)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s", err)
-			os.Exit(1)
-		}
+		groups := closure.LayeredPaths(closureGraph, maxLayers)
 		parents, err := getLayersFromFiles(args[2:])
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s", err)
@@ -133,7 +125,7 @@ var layersNonReproducibleCmd = &cobra.Command{
 			}
 		}
 
-		layers, err := nix.NewLayersNonReproducible(storepaths, maxLayers, tarDirectory, parents, rewrites, ignore, perms, history)
+		layers, err := nix.NewLayersNonReproducible(groups, tarDirectory, parents, rewrites, ignore, perms, history)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s", err)
 			os.Exit(1)

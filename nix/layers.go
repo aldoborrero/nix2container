@@ -64,21 +64,21 @@ func getPaths(storePaths []string, parents []types.Layer, rewrites []types.Rewri
 // If tarDirectory is not an empty string, the tar layer is written to
 // the disk. This is useful for layer containing non reproducible
 // store paths.
-func newLayers(paths types.Paths, tarDirectory string, maxLayers int, history v1.History) (layers []types.Layer, err error) {
-	offset := 0
-	for offset < len(paths) {
-		max := offset + 1
-		if offset == maxLayers-1 {
-			max = len(paths)
+//
+// groups is the layer assignment: each inner slice becomes one layer.
+// The caller (cmd/layers.go) computes it via closure.LayeredPaths.
+func newLayers(groups []types.Paths, tarDirectory string, history v1.History) (layers []types.Layer, err error) {
+	for _, layerPaths := range groups {
+		if len(layerPaths) == 0 {
+			continue
 		}
-		layerPaths := paths[offset:max]
 		layerPath := ""
 		var digest godigest.Digest
 		var size int64
 		if tarDirectory == "" {
 			digest, size, err = TarPathsSum(layerPaths)
 		} else {
-			layerPath, digest, size, err = TarPathsWrite(paths, tarDirectory)
+			layerPath, digest, size, err = TarPathsWrite(layerPaths, tarDirectory)
 		}
 		if err != nil {
 			return layers, err
@@ -99,20 +99,32 @@ func newLayers(paths types.Paths, tarDirectory string, maxLayers int, history v1
 		}
 
 		layers = append(layers, layer)
-
-		offset = max
 	}
 	return layers, nil
 }
 
-func NewLayers(storePaths []string, maxLayers int, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) ([]types.Layer, error) {
-	paths := getPaths(storePaths, parents, rewrites, exclude, perms)
-	return newLayers(paths, "", maxLayers, history)
+// groupPaths applies the parent/rewrite/exclude/perm filtering to each
+// group and drops groups that end up empty (every path already present in
+// a parent layer, or all excluded).
+func groupPaths(groups [][]string, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath) []types.Paths {
+	out := make([]types.Paths, 0, len(groups))
+	for _, g := range groups {
+		ps := getPaths(g, parents, rewrites, exclude, perms)
+		if len(ps) > 0 {
+			out = append(out, ps)
+		}
+	}
+	return out
 }
 
-func NewLayersNonReproducible(storePaths []string, maxLayers int, tarDirectory string, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) (layers []types.Layer, err error) {
-	paths := getPaths(storePaths, parents, rewrites, exclude, perms)
-	return newLayers(paths, tarDirectory, maxLayers, history)
+// NewLayers turns layer groups into layers: each inner slice of groups
+// becomes one layer (after parent/exclude filtering).
+func NewLayers(groups [][]string, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) ([]types.Layer, error) {
+	return newLayers(groupPaths(groups, parents, rewrites, exclude, perms), "", history)
+}
+
+func NewLayersNonReproducible(groups [][]string, tarDirectory string, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) (layers []types.Layer, err error) {
+	return newLayers(groupPaths(groups, parents, rewrites, exclude, perms), tarDirectory, history)
 }
 
 func isPathInLayers(layers []types.Layer, path types.Path) bool {

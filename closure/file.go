@@ -8,6 +8,7 @@ import (
 type Storepath struct {
 	Path       string   `json:"path"`
 	References []string `json:"references"`
+	NarSize    int64    `json:"narSize"`
 }
 
 func ReadClosureGraphFile(filename string) (storepaths []Storepath, err error) {
