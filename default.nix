@@ -23,24 +23,17 @@ let
     EXTRA_LDFLAGS = l.optionalString pkgs.stdenv.isDarwin "-X github.com/nlewo/nix2container/nix.useNixCaseHack=true";
     nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.patchutils ];
     preBuild = let
-      # Needs to use fetchpatch2 to handle "git extended headers", which include
-      # lines with semantic content like "rename from" and "rename to".
-      # However, it also includes "index" lines which include the git revision(s) the patch was initially created from.
-      # These lines may include revisions of differing length, based on how Github generates them.
-      # fetchpatch2 does not filter out, but probably should
-      fetchgitpatch = args: pkgs.fetchpatch2 (args // {
-        postFetch = (args.postFetch or "") + ''
-          sed -i \
-            -e '/^index /d' \
-            -e '/^similarity index /d' \
-            -e '/^dissimilarity index /d' \
-            $out
-        '';
-      });
-      patch = fetchgitpatch {
-        url = "https://github.com/nlewo/container-libs/commit/21b053ac62f3137de42585611953e923577d0e10.patch";
-        sha256 = "sha256-pfwQh7FKWHY/xVAGMSvnjMOmkpMo9NG2HFZqhqZ1VN0=";
-      };
+      # Vendored from
+      # https://github.com/nlewo/container-libs/commit/21b053ac62f3137de42585611953e923577d0e10.patch
+      # as fetchpatch2 (plus an "index"-line-stripping postFetch)
+      # produced it, so the bytes are identical to what was fetched
+      # before. Vendoring removes the only build-time network fetch
+      # outside fixed-output fetchers' reach for offline/proxied
+      # builders. To update: fetchpatch2 the new commit URL with
+      #   postFetch = "sed -i -e '/^index /d' -e '/^similarity index /d' -e '/^dissimilarity index /d' $out"
+      # (the index lines vary with how GitHub abbreviates hashes) and
+      # copy the result here.
+      patch = ./nix-transport.patch;
     in ''
       cat ${patch}
       mkdir -p vendor/github.com/nlewo/nix2container/
