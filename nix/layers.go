@@ -119,8 +119,19 @@ func groupPaths(groups [][]string, parents []types.Layer, rewrites []types.Rewri
 
 // NewLayers turns layer groups into layers: each inner slice of groups
 // becomes one layer (after parent/exclude filtering).
-func NewLayers(groups [][]string, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) ([]types.Layer, error) {
-	return newLayers(groupPaths(groups, parents, rewrites, exclude, perms), "", history)
+//
+// When compressor is non-empty ("gzip" | "zstd"), each layer is
+// tar+compressed to blobDir at build time and the returned Layer carries
+// {Digest: compressed, DiffIDs: uncompressed, LayerPath: blob file,
+// MediaType: tar+<compressor>}. When compressor is "", the existing
+// streaming behavior (tar at push time, Digest==DiffIDs, no blob file)
+// applies and blobDir is unused.
+func NewLayers(groups [][]string, compressor, blobDir string, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) ([]types.Layer, error) {
+	gp := groupPaths(groups, parents, rewrites, exclude, perms)
+	if compressor != "" {
+		return newLayersCompressed(gp, compressor, blobDir, history)
+	}
+	return newLayers(gp, "", history)
 }
 
 func NewLayersNonReproducible(groups [][]string, tarDirectory string, parents []types.Layer, rewrites []types.RewritePath, exclude string, perms []types.PermPath, history v1.History) (layers []types.Layer, err error) {

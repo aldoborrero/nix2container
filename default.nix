@@ -14,7 +14,7 @@ let
         ./data
       ]);
     };
-    vendorHash = "sha256-KPJSt2QTcyIgC6S/ASuc1xSEIXrPDFMnd+5MhCQqia4=";
+    vendorHash = "sha256-d4JfEOxNDw7HIs23LpyK8DHaRchyRdoa252wl0/+X+M=";
     ldflags = l.optional pkgs.stdenv.isDarwin
       "-X github.com/nlewo/nix2container/nix.useNixCaseHack=true";
   };
@@ -237,7 +237,26 @@ let
     contents ? null,
     # Author, comment, created_by
     metadata ? { created_by = "nix2container"; },
-  }: let
+    # Compress layer blobs at build time ("gzip" | "zstd" | null). When
+    # set, each layer is tar+compressed and written to the derivation
+    # output alongside layers.json, and the nix: transport serves the
+    # blob file instead of re-tarring from /nix/store at push time. The
+    # compressed digest is stable, so a repush of an unchanged layer
+    # HEAD-checks the registry with no local work. Trade-off: this
+    # derivation's output grows from a few KB to the layer's full
+    # compressed size, and any closure change re-compresses every
+    # layer. null (the default) keeps the uncompressed streaming
+    # behavior. Note "zstd" produces tar+zstd descriptors, which only
+    # OCI destinations can represent: docker-daemon and schema2-only
+    # registries reject them — use "gzip" there.
+    compressor ? null,
+  }:
+  assert l.assertMsg (compressor == null || reproducible) ''
+    nix2container.buildLayer: compressor requires reproducible = true
+    (the layers-from-non-reproducible-storepaths subcommand doesn't
+    register --compressor).
+  '';
+  let
     subcommand = if reproducible
       then "layers-from-reproducible-storepaths"
       else "layers-from-non-reproducible-storepaths";
@@ -263,9 +282,14 @@ let
 
     allDeps = deps ++ copyToRootList;
     tarDirectory = l.optionalString (!reproducible) "--tar-directory $out";
+    compressorFlag = l.optionalString (compressor != null) "--compressor ${compressor}";
 
     layersJSON = pkgs.runCommandLocal "layers.json" {} ''
       mkdir $out
+      # Layer compression parallelism honors the builder's cores
+      # setting (NIX_BUILD_CORES=0 means "no limit", which Go treats
+      # as "ignore the variable" — i.e. all cores — as intended).
+      export GOMAXPROCS="''${NIX_BUILD_CORES:-0}"
       set -x
       ${nix2container-bin}/bin/nix2container ${subcommand} \
         $out/layers.json \
@@ -274,6 +298,7 @@ let
         ${rewritesFlag} \
         ${permsFlag} \
         ${historyFlag} \
+        ${compressorFlag} \
         ${tarDirectory} \
         ${toString (map (l: l + "/layers.json") layers)}
       set +x
@@ -361,6 +386,10 @@ let
     # Note this is applied on the image layers and not on layers added
     # with the buildImage.layers attribute
     maxLayers ? 1,
+    # See buildLayer.compressor. Applied to the image's own layer
+    # (copyToRoot and its closure); explicit `layers` entries carry
+    # their own compressor setting.
+    compressor ? null,
     # If set to true, the Nix database is initialized with all store
     # paths added into the image. Note this is only useful to run nix
     # commands from the image, for instance to build an image used by
@@ -398,7 +427,7 @@ let
         };
 
       customizationLayer = buildLayer {
-        inherit maxLayers;
+        inherit maxLayers compressor;
         perms = perms';
         copyToRoot = copyToRootList ++ l.optional initializeNixDatabase nixDatabase;
         deps = [configFile];
