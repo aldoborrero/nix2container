@@ -269,13 +269,16 @@ Function arguments are:
     split come from another tool, for instance the `store_layers` of
     the `conf.json` that nixpkgs' `streamLayeredImage` writes.
 
-- **`compressor`** (defaults to `null`): set it to `"gzip"` to
-    compress the layers at build time. The compressed blobs are stored
-    in the layer derivation output, and they are pushed as they are, so
-    a push does not tar the store paths again. The compression is
-    deterministic (level 6, no timestamp, no file name, OS set to
-    255), so the same layer always has the same digest. With
-    `reproducible = false` the layers were already stored in the
+- **`compressor`** (defaults to `null`): set it to `"gzip"` or
+    `"zstd"` to compress the layers at build time. The compressed
+    blobs are stored in the layer derivation output, and they are
+    pushed as they are, so a push does not tar the store paths again.
+    The compression is deterministic (gzip: level 6, no timestamp, no
+    file name, OS set to 255; zstd: level 3, one encoder goroutine),
+    so the same layer always has the same digest. Only OCI
+    destinations accept zstd layers: use `"gzip"` for `docker-daemon`
+    and for registries that only know the Docker schema 2 media types.
+    With `reproducible = false` the layers were already stored in the
     output, uncompressed: they are now stored compressed. With
     `reproducible = true` the cost is store space: the output holds
     the compressed layers, not only their JSON description. A
